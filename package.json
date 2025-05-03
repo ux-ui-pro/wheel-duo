@@ -1,6 +1,6 @@
 {
   "name": "wheel-duo",
-  "version": "0.0.1-dev.0",
+  "version": "1.0.0",
   "description": "Animated dual-wheel component with customizable spin, sway, and callback support",
   "author": "ux-ui.pro",
   "license": "MIT",
@@ -72,6 +72,9 @@
     "component",
     "web",
     "front-end",
-    "dom"
+    "dom",
+    "fortune",
+    "lucky",
+    "prize"
   ]
 }
