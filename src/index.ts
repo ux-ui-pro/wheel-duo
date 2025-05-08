@@ -34,6 +34,10 @@ export default class WheelDuo {
 
   readonly #rootClassName: string;
 
+  #warmedUp: WeakSet<HTMLElement> = new WeakSet();
+  #willChangeActive = false;
+  #willChangeElement: HTMLElement | null = null;
+
   #onFirstClick: (e: MouseEvent) => void = () => {
     void this.#runPhaseOne();
   };
@@ -71,17 +75,93 @@ export default class WheelDuo {
     this.#secondWheel = second;
     this.#triggerButton = trigger;
 
+    this.#warmUp(this.#firstWheel);
+    this.#warmUp(this.#secondWheel);
+
     this.#triggerButton.addEventListener('click', this.#onFirstClick);
 
     this.#startSway(this.#firstWheel);
   }
 
+  destroy(): void {
+    this.#stopSway();
+    this.#cancelAnimations(this.#firstWheel);
+    this.#cancelAnimations(this.#secondWheel);
+
+    this.#triggerButton?.removeEventListener('click', this.#onFirstClick);
+    this.#triggerButton?.removeEventListener('click', this.#onSecondClick);
+
+    this.#finalRotation = new WeakMap();
+
+    this.#disableWillChange();
+  }
+
+  reset(): void {
+    this.destroy();
+
+    this.#firstWheel.style.transform = '';
+    this.#secondWheel.style.transform = '';
+
+    const cls = this.#rootClassName;
+
+    this.#rootElement.classList.remove(
+      `${cls}--state-one-active`,
+      `${cls}--state-one-complete`,
+      `${cls}--state-two-active`,
+      `${cls}--state-two-complete`,
+    );
+
+    this.#triggerButton.addEventListener('click', this.#onFirstClick);
+
+    this.#startSway(this.#firstWheel);
+  }
+
+  #warmUp(el: HTMLElement): void {
+    if (this.#warmedUp.has(el)) return;
+
+    const warm = el.animate(
+      [
+        {
+          transform: 'rotate(0deg)',
+          filter: 'blur(0px)',
+        },
+        {
+          transform: 'rotate(0.01deg)',
+          filter: 'blur(2px)',
+        },
+      ],
+      { duration: 1 },
+    );
+
+    warm.cancel();
+
+    this.#warmedUp.add(el);
+  }
+
+  #enableWillChange(el: HTMLElement): void {
+    if (this.#willChangeActive) return;
+
+    el.style.willChange = 'transform, filter';
+
+    this.#willChangeActive = true;
+    this.#willChangeElement = el;
+  }
+
+  #disableWillChange(): void {
+    if (!this.#willChangeActive || !this.#willChangeElement) return;
+
+    this.#willChangeElement.style.willChange = 'auto';
+    this.#willChangeElement = null;
+    this.#willChangeActive = false;
+  }
+
   async #rotateWheelTo(el: HTMLElement, finalDeg: number): Promise<void> {
+    this.#enableWillChange(el);
+
     const currentDeg = this.#getCurrentRotation(el);
     const diffCW = (this.#normalize(finalDeg) - this.#normalize(currentDeg) + 360) % 360;
     const targetDeg = currentDeg + this.#rotations * 360 + diffCW;
     const overshootDeg = targetDeg + this.#overshootDeg;
-
     const total = this.#duration + this.#returnDuration;
     const overshootAt = this.#duration / total;
 
@@ -122,6 +202,8 @@ export default class WheelDuo {
     await Promise.all([spin.finished, blur.finished]);
 
     this.#finalRotation.set(el, this.#normalize(targetDeg));
+
+    this.#disableWillChange();
   }
 
   #startSway(el: HTMLElement): void {
@@ -176,37 +258,6 @@ export default class WheelDuo {
 
   #cancelAnimations(el: HTMLElement): void {
     el.getAnimations().forEach((a) => a.cancel());
-  }
-
-  destroy(): void {
-    this.#stopSway();
-    this.#cancelAnimations(this.#firstWheel);
-    this.#cancelAnimations(this.#secondWheel);
-
-    this.#triggerButton?.removeEventListener('click', this.#onFirstClick);
-    this.#triggerButton?.removeEventListener('click', this.#onSecondClick);
-
-    this.#finalRotation = new WeakMap();
-  }
-
-  reset(): void {
-    this.destroy();
-
-    this.#firstWheel.style.transform = '';
-    this.#secondWheel.style.transform = '';
-
-    const cls = this.#rootClassName;
-
-    this.#rootElement.classList.remove(
-      `${cls}--state-one-active`,
-      `${cls}--state-one-complete`,
-      `${cls}--state-two-active`,
-      `${cls}--state-two-complete`,
-    );
-
-    this.#triggerButton.addEventListener('click', this.#onFirstClick);
-
-    this.#startSway(this.#firstWheel);
   }
 
   async #runPhaseOne(): Promise<void> {

@@ -1,6 +1,6 @@
 {
   "name": "wheel-duo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Animated dual-wheel component with customizable spin, sway, and callback support",
   "author": "ux-ui.pro",
   "license": "MIT",
