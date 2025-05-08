@@ -9,7 +9,7 @@
 [![GitHub package version](https://img.shields.io/github/package-json/v/ux-ui-pro/wheel-duo.svg)](https://github.com/ux-ui-pro/wheel-duo)
 [![NPM Downloads](https://img.shields.io/npm/dm/wheel-duo.svg?style=flat)](https://www.npmjs.org/package/wheel-duo)
 
-<sup>1.7kB gzipped</sup>
+<sup>2kB gzipped</sup>
 
 <a href="https://codepen.io/ux-ui/pen/jEEzBed">Demo</a>
 

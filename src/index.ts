@@ -31,12 +31,10 @@ export default class WheelDuo {
   readonly #returnDuration: number;
   readonly #swayAmplitude: number;
   readonly #swayPeriod: number;
-
   readonly #rootClassName: string;
 
   #warmedUp: WeakSet<HTMLElement> = new WeakSet();
-  #willChangeActive = false;
-  #willChangeElement: HTMLElement | null = null;
+  #willChangeElements: Set<HTMLElement> = new Set();
 
   #onFirstClick: (e: MouseEvent) => void = () => {
     void this.#runPhaseOne();
@@ -79,7 +77,6 @@ export default class WheelDuo {
     this.#warmUp(this.#secondWheel);
 
     this.#triggerButton.addEventListener('click', this.#onFirstClick);
-
     this.#startSway(this.#firstWheel);
   }
 
@@ -92,8 +89,7 @@ export default class WheelDuo {
     this.#triggerButton?.removeEventListener('click', this.#onSecondClick);
 
     this.#finalRotation = new WeakMap();
-
-    this.#disableWillChange();
+    this.#disableAllWillChange();
   }
 
   reset(): void {
@@ -113,46 +109,54 @@ export default class WheelDuo {
 
     this.#triggerButton.addEventListener('click', this.#onFirstClick);
 
+    this.#warmUp(this.#firstWheel);
+    this.#warmUp(this.#secondWheel);
+
     this.#startSway(this.#firstWheel);
   }
 
   #warmUp(el: HTMLElement): void {
     if (this.#warmedUp.has(el)) return;
 
-    const warm = el.animate(
+    this.#enableWillChange(el);
+
+    const fakeSpin = el.animate(
       [
         {
           transform: 'rotate(0deg)',
-          filter: 'blur(0px)',
+          filter: 'blur(0)',
+          opacity: 0,
         },
         {
           transform: 'rotate(0.01deg)',
           filter: 'blur(2px)',
+          opacity: 0,
         },
       ],
-      { duration: 1 },
+      {
+        duration: 100,
+        fill: 'forwards',
+      },
     );
 
-    warm.cancel();
+    void el.offsetHeight;
+
+    fakeSpin.onfinish = (): void => fakeSpin.cancel();
 
     this.#warmedUp.add(el);
   }
 
   #enableWillChange(el: HTMLElement): void {
-    if (this.#willChangeActive) return;
+    if (this.#willChangeElements.has(el)) return;
 
     el.style.willChange = 'transform, filter';
 
-    this.#willChangeActive = true;
-    this.#willChangeElement = el;
+    this.#willChangeElements.add(el);
   }
 
-  #disableWillChange(): void {
-    if (!this.#willChangeActive || !this.#willChangeElement) return;
-
-    this.#willChangeElement.style.willChange = 'auto';
-    this.#willChangeElement = null;
-    this.#willChangeActive = false;
+  #disableAllWillChange(): void {
+    this.#willChangeElements.forEach((el) => (el.style.willChange = 'auto'));
+    this.#willChangeElements.clear();
   }
 
   async #rotateWheelTo(el: HTMLElement, finalDeg: number): Promise<void> {
@@ -161,7 +165,7 @@ export default class WheelDuo {
     const currentDeg = this.#getCurrentRotation(el);
     const diffCW = (this.#normalize(finalDeg) - this.#normalize(currentDeg) + 360) % 360;
     const targetDeg = currentDeg + this.#rotations * 360 + diffCW;
-    const overshootDeg = targetDeg + this.#overshootDeg;
+    const overshoot = targetDeg + this.#overshootDeg;
     const total = this.#duration + this.#returnDuration;
     const overshootAt = this.#duration / total;
 
@@ -173,7 +177,7 @@ export default class WheelDuo {
         },
         {
           offset: overshootAt,
-          transform: `rotate(${overshootDeg}deg)`,
+          transform: `rotate(${overshoot}deg)`,
           easing: 'cubic-bezier(0.77,0,0.175,1)',
         },
         { transform: `rotate(${targetDeg}deg)` },
@@ -192,18 +196,12 @@ export default class WheelDuo {
         { offset: 0.65, filter: 'blur(1px)' },
         { offset: 1, filter: 'blur(0)' },
       ],
-      {
-        duration: total,
-        fill: 'forwards',
-        easing: 'ease-in-out',
-      },
+      { duration: total, fill: 'forwards', easing: 'ease-in-out' },
     );
 
     await Promise.all([spin.finished, blur.finished]);
 
     this.#finalRotation.set(el, this.#normalize(targetDeg));
-
-    this.#disableWillChange();
   }
 
   #startSway(el: HTMLElement): void {
@@ -262,14 +260,15 @@ export default class WheelDuo {
 
   async #runPhaseOne(): Promise<void> {
     const [firstAngle] = this.options.targetAngles;
+    const cls = this.#rootClassName;
 
-    this.#rootElement.classList.add(`${this.#rootClassName}--state-one-active`);
+    this.#rootElement.classList.add(`${cls}--state-one-active`);
     this.#stopSway();
 
     await this.#rotateWheelTo(this.#firstWheel, firstAngle);
 
-    this.#rootElement.classList.remove(`${this.#rootClassName}--state-one-active`);
-    this.#rootElement.classList.add(`${this.#rootClassName}--state-one-complete`);
+    this.#rootElement.classList.remove(`${cls}--state-one-active`);
+    this.#rootElement.classList.add(`${cls}--state-one-complete`);
 
     this.#startSway(this.#secondWheel);
 
@@ -279,14 +278,17 @@ export default class WheelDuo {
 
   async #runPhaseTwo(): Promise<void> {
     const [, secondAngle] = this.options.targetAngles;
+    const cls = this.#rootClassName;
 
-    this.#rootElement.classList.add(`${this.#rootClassName}--state-two-active`);
+    this.#rootElement.classList.add(`${cls}--state-two-active`);
     this.#stopSway();
 
     await this.#rotateWheelTo(this.#secondWheel, secondAngle);
 
-    this.#rootElement.classList.remove(`${this.#rootClassName}--state-two-active`);
-    this.#rootElement.classList.add(`${this.#rootClassName}--state-two-complete`);
+    this.#rootElement.classList.remove(`${cls}--state-two-active`);
+    this.#rootElement.classList.add(`${cls}--state-two-complete`);
+
+    this.#disableAllWillChange();
 
     this.options.callback?.();
   }
