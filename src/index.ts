@@ -33,15 +33,10 @@ export default class WheelDuo {
   readonly #swayPeriod: number;
   readonly #rootClassName: string;
 
-  #warmedUp = new WeakSet<HTMLElement>();
+  #warmedUp = false;
 
-  #onFirstClick = (): void => {
-    void this.#runPhaseOne();
-  };
-
-  #onSecondClick = (): void => {
-    void this.#runPhaseTwo();
-  };
+  #onFirstClick: () => void = () => void this.#runPhaseOne();
+  #onSecondClick: () => void = () => void this.#runPhaseTwo();
 
   constructor(private readonly options: Readonly<WheelDuoOptions>) {
     this.#rotations = options.rotations ?? 6;
@@ -58,22 +53,19 @@ export default class WheelDuo {
 
   init(): void {
     const root = document.querySelector<HTMLElement>(this.options.rootSelector);
+    const first = root?.querySelector<HTMLElement>(this.options.firstWheelSelector);
+    const second = root?.querySelector<HTMLElement>(this.options.secondWheelSelector);
+    const trigger = root?.querySelector<HTMLButtonElement>(this.options.triggerSelector);
 
-    if (!root) return;
-
-    const first = root.querySelector<HTMLElement>(this.options.firstWheelSelector);
-    const second = root.querySelector<HTMLElement>(this.options.secondWheelSelector);
-    const trigger = root.querySelector<HTMLButtonElement>(this.options.triggerSelector);
-
-    if (!first || !second || !trigger) return;
+    if (!root || !first || !second || !trigger) return;
 
     this.#rootElement = root;
     this.#firstWheel = first;
     this.#secondWheel = second;
     this.#triggerButton = trigger;
 
-    this.#dummyWarmUp(this.#firstWheel);
-    this.#dummyWarmUp(this.#secondWheel);
+    this.#warmUp(this.#firstWheel);
+    this.#warmUp(this.#secondWheel);
     this.#startSway(this.#firstWheel);
 
     this.#triggerButton.addEventListener('click', this.#onFirstClick);
@@ -90,6 +82,7 @@ export default class WheelDuo {
 
   reset(): void {
     this.destroy();
+
     this.#firstWheel.style.transform = '';
     this.#secondWheel.style.transform = '';
 
@@ -102,32 +95,60 @@ export default class WheelDuo {
       `${cls}--state-two-complete`,
     );
 
-    this.#warmedUp = new WeakSet<HTMLElement>();
+    this.#warmedUp = false;
 
     this.init();
   }
 
-  #dummyWarmUp(el: HTMLElement): void {
-    if (this.#warmedUp.has(el)) return;
+  #warmUp(el: HTMLElement): void {
+    if (this.#warmedUp) return;
 
-    const dummy = el.animate(
-      [
-        { transform: 'rotate(0deg)', filter: 'blur(0px)', offset: 0 },
-        { transform: 'rotate(0deg)', filter: 'blur(0px)', offset: 0.99999 },
-        { transform: 'rotate(0deg)', filter: 'blur(0px)', offset: 1 },
-      ],
-      {
-        duration: 1,
-        easing: 'cubic-bezier(0.86,0,0.07,1)',
-        fill: 'forwards',
-      },
+    const warm = el.animate(
+      [{ filter: 'blur(0)' }, { filter: 'blur(0.4px)', offset: 0.5 }, { filter: 'blur(0)' }],
+      { duration: 64, fill: 'forwards' },
     );
 
-    dummy.onfinish = (): void => {
-      dummy.cancel();
+    el.getBoundingClientRect();
+
+    warm.onfinish = (): void => {
+      warm.commitStyles?.();
+      warm.cancel();
     };
 
-    this.#warmedUp.add(el);
+    el.querySelectorAll('img').forEach((img) => {
+      img.decode?.().catch(() => {});
+    });
+
+    this.#warmedUp = true;
+  }
+
+  async #runPhaseOne(): Promise<void> {
+    const [a1] = this.options.targetAngles;
+    const cls = this.#rootClassName;
+
+    this.#rootElement.classList.add(`${cls}--state-one-active`);
+    this.#stopSway();
+
+    await this.#rotateWheelTo(this.#firstWheel, a1);
+
+    this.#rootElement.classList.replace(`${cls}--state-one-active`, `${cls}--state-one-complete`);
+    this.#startSway(this.#secondWheel);
+
+    this.#triggerButton.removeEventListener('click', this.#onFirstClick);
+    this.#triggerButton.addEventListener('click', this.#onSecondClick, { once: true });
+  }
+
+  async #runPhaseTwo(): Promise<void> {
+    const [, a2] = this.options.targetAngles;
+    const cls = this.#rootClassName;
+
+    this.#rootElement.classList.add(`${cls}--state-two-active`);
+    this.#stopSway();
+
+    await this.#rotateWheelTo(this.#secondWheel, a2);
+
+    this.#rootElement.classList.replace(`${cls}--state-two-active`, `${cls}--state-two-complete`);
+    this.options.callback?.();
   }
 
   async #rotateWheelTo(el: HTMLElement, finalDeg: number): Promise<void> {
@@ -140,21 +161,11 @@ export default class WheelDuo {
 
     const spin = el.animate(
       [
-        {
-          transform: `rotate(${current}deg)`,
-          easing: 'cubic-bezier(0.86,0,0.07,1)',
-        },
-        {
-          offset: at,
-          transform: `rotate(${overs}deg)`,
-          easing: 'cubic-bezier(0.77,0,0.175,1)',
-        },
+        { transform: `rotate(${current}deg)`, easing: 'cubic-bezier(0.86,0,0.07,1)' },
+        { offset: at, transform: `rotate(${overs}deg)`, easing: 'cubic-bezier(0.77,0,0.175,1)' },
         { transform: `rotate(${target}deg)` },
       ],
-      {
-        duration: total,
-        fill: 'forwards',
-      },
+      { duration: total, fill: 'forwards' },
     );
 
     const blur = el.animate(
@@ -165,11 +176,7 @@ export default class WheelDuo {
         { offset: 0.65, filter: 'blur(1px)' },
         { offset: 1, filter: 'blur(0)' },
       ],
-      {
-        duration: total,
-        fill: 'forwards',
-        easing: 'ease-in-out',
-      },
+      { duration: total, fill: 'forwards', easing: 'ease-in-out' },
     );
 
     await Promise.all([spin.finished, blur.finished]);
@@ -213,49 +220,14 @@ export default class WheelDuo {
     this.#swayingElement = null;
   }
 
-  async #runPhaseOne(): Promise<void> {
-    const [a1] = this.options.targetAngles;
-    const cls = this.#rootClassName;
-
-    this.#rootElement.classList.add(`${cls}--state-one-active`);
-    this.#stopSway();
-
-    await this.#rotateWheelTo(this.#firstWheel, a1);
-
-    this.#rootElement.classList.replace(`${cls}--state-one-active`, `${cls}--state-one-complete`);
-
-    this.#startSway(this.#secondWheel);
-
-    this.#triggerButton.removeEventListener('click', this.#onFirstClick);
-    this.#triggerButton.addEventListener('click', this.#onSecondClick, { once: true });
-  }
-
-  async #runPhaseTwo(): Promise<void> {
-    const [, a2] = this.options.targetAngles;
-    const cls = this.#rootClassName;
-
-    this.#rootElement.classList.add(`${cls}--state-two-active`);
-
-    this.#stopSway();
-
-    await this.#rotateWheelTo(this.#secondWheel, a2);
-
-    this.#rootElement.classList.replace(`${cls}--state-two-active`, `${cls}--state-two-complete`);
-
-    this.options.callback?.();
-  }
-
   #normalize(deg: number): number {
     return ((deg % 360) + 360) % 360;
   }
 
   #getCurrentRotation(el: HTMLElement): number {
     const t = getComputedStyle(el).transform;
-
     if (!t || t === 'none') return 0;
-
     const { a, b } = new DOMMatrixReadOnly(t);
-
     return (Math.atan2(b, a) * 180) / Math.PI;
   }
 
